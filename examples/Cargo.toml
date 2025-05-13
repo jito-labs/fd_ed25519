@@ -1,0 +1,21 @@
+[package]
+name = "examples"
+edition = "2021"
+version = "0.1.0"
+publish = false
+
+[lib]
+name = "lib"
+path = "./lib.rs"
+
+[dependencies]
+fd_ed25519 = { path = "../" }
+rand = "0.8"
+solana-sdk = "2"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[example]]
+name = "sigverify"
+path = "sigverify.rs"
