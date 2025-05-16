@@ -1,14 +1,11 @@
 use std::{env, path::PathBuf};
 
 fn main() {
-    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
-    let use_avx512 = if target_arch == "x86_64" && std::is_x86_feature_detected!("avx512f") {
+    if env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default() == "x86_64"
+        && std::is_x86_feature_detected!("avx512f")
+    {
         println!("cargo:rustc-cfg=fd_has_avx512");
         println!("cargo:warning=Build: Detected AVX512F support on x86_64. Enabling AVX512 features for C compilation and bindings.");
-        true
-    } else {
-        println!("cargo:warning=Build: AVX512F support not detected or not on x86_64. AVX512 C features and defines will be disabled.");
-        false
     };
 
     let vendor_dir = PathBuf::from("vendor");
@@ -32,18 +29,12 @@ fn main() {
         "ballet/ed25519/fd_f25519.c",
         "ballet/sha512/fd_sha512.c",
         "util/fd_util.c",
-    ];
-
-    let avx512_source_files = vec![
         "ballet/sha512/fd_sha512_core_avx2.S",
         "ballet/ed25519/avx512/fd_r43x6_ge.c",
         "ballet/ed25519/avx512/fd_r43x6.c",
     ];
 
-    let mut source_files_to_compile = base_source_files.clone();
-    if use_avx512 {
-        source_files_to_compile.extend(avx512_source_files.clone());
-    }
+    let source_files_to_compile = base_source_files.clone();
 
     // 3. Compile the C code into a static library.
     let mut cc_build = cc::Build::new();
@@ -89,11 +80,11 @@ fn main() {
         .flag("-DFD_HAS_OPENSSL=1")
         .flag("-DFD_HAS_X86=1")
         .flag("-DFD_HAS_SSE=1")
-        .flag("-DFD_HAS_AVX=1") // Assuming AVX is common or checked elsewhere if needed
+        .flag("-DFD_HAS_AVX=1")
         .flag("-DFD_HAS_GFNI=1")
         .flag("-DFD_IS_X86_64=1")
         .flag("-DFD_HAS_AESNI=1")
-        // .flag("-DFD_HAS_AVX512=1") // This is now conditional
+        .flag("-DFD_HAS_AVX512=1")
         .flag("-D_XOPEN_SOURCE=700")
         .flag("-DFD_HAS_HOSTED=1")
         .flag("-pthread")
@@ -106,13 +97,6 @@ fn main() {
         .flag("-DFD_BUILD_INFO=\"build/native/clang/info\"")
         .flag("-std=c17")
         .flag("-fwrapv");
-
-    if use_avx512 {
-        cc_build.flag("-DFD_HAS_AVX512=1");
-        // If specific AVX512 target features beyond what -march=native provides are needed for compilation,
-        // they could be added here. E.g. for clang:
-        // cc_build.flag("-mavx512f"); // or other specific AVX512 features
-    }
 
     cc_build.compile("libballet_ed25519.a");
 
@@ -127,11 +111,7 @@ fn main() {
     }
 
     // Rerun if any of the *potentially* compiled C/S files change.
-    let all_possible_source_files_for_rerun = {
-        let mut temp = base_source_files.clone();
-        temp.extend(avx512_source_files.clone());
-        temp
-    };
+    let all_possible_source_files_for_rerun = base_source_files.clone();
     for rel_path_str in all_possible_source_files_for_rerun.iter() {
         println!(
             "cargo:rerun-if-changed={}",
@@ -168,17 +148,13 @@ fn main() {
         .clang_arg("-DFD_HAS_GFNI=1")
         .clang_arg("-DFD_IS_X86_64=1")
         .clang_arg("-DFD_HAS_AESNI=1")
-        // .clang_arg("-DFD_HAS_AVX512=1") // This is now conditional
+        .clang_arg("-DFD_HAS_AVX512=1")
         .clang_arg("-D_XOPEN_SOURCE=700")
         .clang_arg("-DFD_HAS_HOSTED=1")
         .clang_arg("-DFD_HAS_ATOMIC=1")
         .clang_arg("-DFD_HAS_UCONTEXT=1")
         .clang_arg("-DFD_BUILD_INFO=\"build/native/clang/info\"")
         .clang_arg("-std=c17");
-
-    if use_avx512 {
-        bindgen_builder = bindgen_builder.clang_arg("-DFD_HAS_AVX512=1");
-    }
 
     let bindings = bindgen_builder
         .allowlist_function("fd_ed25519_public_from_private")
