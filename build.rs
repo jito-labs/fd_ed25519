@@ -47,8 +47,8 @@ fn main() {
         .include(&vendor_dir) // Allows #include "ballet/..." and #include "util/..."
         .flag("-DFD_HAS_BACKTRACE=0")
         .flag("-DFD_USING_CLANG=1")
-        .flag("-march=native")
-        .flag("-mtune=native")
+        .flag("-march=znver4")
+        .flag("-mtune=znver4")
         .flag("-Werror")
         .flag("-Wall")
         .flag("-Wextra")
@@ -134,7 +134,7 @@ fn main() {
         // Add clang args for bindgen based on the provided flags
         .clang_arg("-DFD_HAS_BACKTRACE=0")
         .clang_arg("-DFD_USING_CLANG=1")
-        .clang_arg("-march=native") // Bindgen also needs to know target architecture for correct parsing
+        .clang_arg("-march=znver4") // Bindgen also needs to know target architecture for correct parsing
         .clang_arg("-DFD_HAS_OPTIMIZATION=1")
         .clang_arg("-DFD_HAS_SHANI=1")
         .clang_arg("-DFD_HAS_INT128=1")
