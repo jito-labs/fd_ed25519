@@ -75,6 +75,7 @@ fn main() {
         .flag("-march=native")
         .flag("-mtune=native")
         .flag("-Wall")
+        .flag("-w")
         .flag("-Wextra")
         .flag("-Wpedantic")
         .flag("-Wstrict-aliasing=2")
