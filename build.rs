@@ -3,12 +3,24 @@ use std::{env, path::PathBuf};
 fn main() {
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     let is_x86_64 = target_arch == "x86_64";
-    let use_avx512 = if target_arch == "x86_64" && std::is_x86_feature_detected!("avx512f") {
-        println!("cargo:rustc-cfg=fd_has_avx512");
-        println!("cargo:warning=Build: Detected AVX512F support on x86_64. Enabling AVX512 features for C compilation and bindings.");
-        true
+
+    let use_avx512 = if is_x86_64 {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        let has_avx512 = std::is_x86_feature_detected!("avx512f");
+
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+        let has_avx512 = false;
+
+        if has_avx512 {
+            println!("cargo:rustc-cfg=fd_has_avx512");
+            println!("cargo:warning=Build: Detected AVX512F support on x86_64, Enabling AVX512 features for C compilation and bindings.");
+            true
+        } else {
+            println!("cargo:warning=Build: AVX512F support not detected, AVX512 C features and defines will be disabled.");
+            false
+        }
     } else {
-        println!("cargo:warning=Build: AVX512F support not detected or not on x86_64. AVX512 C features and defines will be disabled.");
+        println!("cargo:warning=Build: Not on x86_64, AVX512 C features and defines will be disabled.");
         false
     };
 
