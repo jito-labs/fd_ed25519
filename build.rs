@@ -73,7 +73,6 @@ fn main() {
         .flag("-DFD_USING_CLANG=1")
         .flag("-march=native")
         .flag("-mtune=native")
-        .flag("-Werror")
         .flag("-Wall")
         .flag("-Wextra")
         .flag("-Wpedantic")
@@ -113,6 +112,7 @@ fn main() {
 
     if is_x86_64 {
         cc_build
+            .flag("-Werror") // fails on macos
             .flag("-DFD_HAS_X86=1")
             .flag("-DFD_IS_X86_64=1")
             .flag("-DFD_HAS_SSE=1")
