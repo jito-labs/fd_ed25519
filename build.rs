@@ -98,20 +98,21 @@ fn main() {
         .flag("-DFD_BUILD_INFO=\"build/native/clang/info\"")
         .flag("-std=c17")
         .flag("-fwrapv");
-    
+
     if is_x86_64 {
         cc_build
             .flag("-DFD_HAS_X86=1")
             .flag("-DFD_IS_X86_64=1")
             .flag("-DFD_HAS_SSE=1")
-            .flag("-DFD_HAS_AVX=1")
-            .flag("-DFD_HAS_GFNI=1")
             .flag("-DFD_HAS_AESNI=1")
             .flag("-DFD_HAS_SHANI=1")
             .flag("-mfpmath=sse")
             .flag("-Wl,-z,relro,-z,now");
         if use_avx512 {
-            cc_build.flag("-DFD_HAS_AVX512=1");
+            cc_build
+                .flag("-DFD_HAS_AVX=1")
+                .flag("-DFD_HAS_AVX512=1")
+                .flag("-DFD_HAS_GFNI=1");
         }
     }
 
@@ -168,18 +169,19 @@ fn main() {
         .clang_arg("-DFD_HAS_UCONTEXT=1")
         .clang_arg("-DFD_BUILD_INFO=\"build/native/clang/info\"")
         .clang_arg("-std=c17");
-    
+
     if is_x86_64 {
         bindgen_builder = bindgen_builder
             .clang_arg("-DFD_HAS_X86=1")
             .clang_arg("-DFD_IS_X86_64=1")
             .clang_arg("-DFD_HAS_SSE=1")
-            .clang_arg("-DFD_HAS_AVX=1")
-            .clang_arg("-DFD_HAS_GFNI=1")
             .clang_arg("-DFD_HAS_AESNI=1")
             .clang_arg("-DFD_HAS_SHANI=1");
         if use_avx512 {
-            bindgen_builder = bindgen_builder.clang_arg("-DFD_HAS_AVX512=1");
+            bindgen_builder = bindgen_builder
+                .clang_arg("-DFD_HAS_AVX=1")
+                .clang_arg("-DFD_HAS_AVX512=1")
+                .clang_arg("-DFD_HAS_GFNI=1");
         }
     }
 

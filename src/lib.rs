@@ -274,19 +274,17 @@ pub fn fd_ed25519_strerror(err: std::os::raw::c_int) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use base64::Engine;
-    use base64::prelude::BASE64_STANDARD;
+    use base64::{prelude::BASE64_STANDARD, Engine};
+    use hex_literal::hex;
+    use rand::{rngs::OsRng, RngCore};
+    use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
+
     // If this test module is inside src/lib.rs, use super::*
     // If your crate is named something else, adjust accordingly.
     // Assuming the functions from your fd_ed25519_bindings/src/lib.rs are accessible
     // via `crate::` or `super::` depending on where this test module is placed.
     // For this example, let's assume they are in the root of the crate `fd_ed25519_bindings`.
     use super::*;
-
-    use hex_literal::hex;
-    use rand::{rngs::OsRng, RngCore};
-
-    use solana_sdk::{transaction::VersionedTransaction, pubkey::Pubkey};
 
     #[test]
     fn verify_specific_solana_transaction_with_fd_ed25519() {
@@ -296,7 +294,11 @@ mod tests {
         let message_bytes = txn.message.serialize();
         assert!(!txn.signatures.is_empty(), "Transaction has no signatures.");
         let signature_slice = txn.signatures[0].as_ref();
-        assert_eq!(signature_slice.len(), FD_ED25519_SIGNATURE_LEN, "Signature length mismatch.");
+        assert_eq!(
+            signature_slice.len(),
+            FD_ED25519_SIGNATURE_LEN,
+            "Signature length mismatch."
+        );
         let mut signature_array = [0u8; FD_ED25519_SIGNATURE_LEN];
         signature_array.copy_from_slice(signature_slice);
 
@@ -304,10 +306,17 @@ mod tests {
         // For simple transactions, the first signature corresponds to the first account key marked as a signer.
         // The `static_account_keys` are the accounts loaded by the transaction.
         // The first key in `static_account_keys` is typically the fee payer and primary signer.
-        assert!(!txn.message.static_account_keys().is_empty(), "Transaction message has no static account keys.");
+        assert!(
+            !txn.message.static_account_keys().is_empty(),
+            "Transaction message has no static account keys."
+        );
         let public_key_solana: &Pubkey = &txn.message.static_account_keys()[0];
         let public_key_slice = public_key_solana.as_ref();
-        assert_eq!(public_key_slice.len(), FD_ED25519_PUBLIC_KEY_LEN, "Public key length mismatch.");
+        assert_eq!(
+            public_key_slice.len(),
+            FD_ED25519_PUBLIC_KEY_LEN,
+            "Public key length mismatch."
+        );
         let mut public_key_array = [0u8; FD_ED25519_PUBLIC_KEY_LEN];
         public_key_array.copy_from_slice(public_key_slice);
 
@@ -323,7 +332,13 @@ mod tests {
             &mut initialized_sha_ctx,
         );
 
-        assert!(verification_result.is_ok(), "Signature verification failed. Error: {:?}", verification_result.err().map(|code| fd_ed25519_strerror(code)));
+        assert!(
+            verification_result.is_ok(),
+            "Signature verification failed. Error: {:?}",
+            verification_result
+                .err()
+                .map(|code| fd_ed25519_strerror(code))
+        );
     }
 
     // Helper to create and initialize sha context
