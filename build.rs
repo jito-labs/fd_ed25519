@@ -2,12 +2,25 @@ use std::{env, path::PathBuf};
 
 fn main() {
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
-    let use_avx512 = if target_arch == "x86_64" && std::is_x86_feature_detected!("avx512f") {
-        println!("cargo:rustc-cfg=fd_has_avx512");
-        println!("cargo:warning=Build: Detected AVX512F support on x86_64. Enabling AVX512 features for C compilation and bindings.");
-        true
+    let is_x86_64 = target_arch == "x86_64";
+
+    let use_avx512 = if is_x86_64 {
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        let has_avx512 = std::is_x86_feature_detected!("avx512f");
+
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+        let has_avx512 = false;
+
+        if has_avx512 {
+            println!("cargo:rustc-cfg=fd_has_avx512");
+            println!("cargo:warning=Build: Detected AVX512F support on x86_64, Enabling AVX512 features for C compilation and bindings.");
+            true
+        } else {
+            println!("cargo:warning=Build: AVX512F support not detected, AVX512 C features and defines will be disabled.");
+            false
+        }
     } else {
-        println!("cargo:warning=Build: AVX512F support not detected or not on x86_64. AVX512 C features and defines will be disabled.");
+        println!("cargo:warning=Build: Not on x86_64, AVX512 C features and defines will be disabled.");
         false
     };
 
@@ -46,6 +59,8 @@ fn main() {
     }
 
     // 3. Compile the C code into a static library.
+    // flags taken from command:
+    // clang -isystem ./opt/include -DFD_HAS_BACKTRACE=0 -DFD_USING_CLANG=1 -march=native -mtune=native -Werror -Wall -Wextra -Wpedantic -Wstrict-aliasing=2 -Wconversion -Wdouble-promotion -Wformat-security -Wimplicit-fallthrough -Wno-address-of-packed-member -Wno-unused-command-line-argument -Wno-bitwise-instead-of-logical -Wno-gnu-zero-variadic-macro-arguments -O3 -ffast-math -fno-associative-math -fno-reciprocal-math -DFD_HAS_OPTIMIZATION=1 -g -fno-omit-frame-pointer -fPIC -Wl,-z,relro,-z,now -fstack-protector-strong -D_FORTIFY_SOURCE=2 -DFD_HAS_SHANI=1 -DFD_HAS_INT128=1 -DFD_HAS_DOUBLE=1 -DFD_HAS_ALLOCA=1 -DFD_HAS_THREADS=1 -DFD_HAS_OPENSSL=1 -DFD_HAS_X86=1 -DFD_HAS_SSE=1 -DFD_HAS_AVX=1 -DFD_HAS_GFNI=1 -DFD_IS_X86_64=1 -DFD_HAS_AESNI=1 -DFD_HAS_AVX512=1 -D_XOPEN_SOURCE=700 -DFD_HAS_HOSTED=1 -pthread -DFD_HAS_THREADS=1 -DFD_HAS_ATOMIC=1 -mfpmath=sse -falign-functions=32 -Xclang -target-feature -Xclang +fast-vector-fsqrt -DFD_HAS_UCONTEXT=1 -DFD_BUILD_INFO=\"build/native/clang/info\" -std=c17 -fwrapv -M -MP src/ballet/ed25519/fd_ed25519_user.c -o build/native/clang/obj/ballet/ed25519/fd_ed25519_user.d.tmp
     let mut cc_build = cc::Build::new();
     cc_build
         .files(
@@ -58,7 +73,6 @@ fn main() {
         .flag("-DFD_USING_CLANG=1")
         .flag("-march=native")
         .flag("-mtune=native")
-        .flag("-Werror")
         .flag("-Wall")
         .flag("-Wextra")
         .flag("-Wpedantic")
@@ -79,39 +93,39 @@ fn main() {
         .flag("-g")
         .flag("-fno-omit-frame-pointer")
         .flag("-fPIC")
-        .flag("-Wl,-z,relro,-z,now")
         .flag("-fstack-protector-strong")
         .flag("-D_FORTIFY_SOURCE=2")
-        .flag("-DFD_HAS_SHANI=1")
         .flag("-DFD_HAS_INT128=1")
         .flag("-DFD_HAS_DOUBLE=1")
         .flag("-DFD_HAS_ALLOCA=1")
         .flag("-DFD_HAS_OPENSSL=1")
-        .flag("-DFD_HAS_X86=1")
-        .flag("-DFD_HAS_SSE=1")
-        .flag("-DFD_HAS_AVX=1") // Assuming AVX is common or checked elsewhere if needed
-        .flag("-DFD_HAS_GFNI=1")
-        .flag("-DFD_IS_X86_64=1")
-        .flag("-DFD_HAS_AESNI=1")
-        // .flag("-DFD_HAS_AVX512=1") // This is now conditional
         .flag("-D_XOPEN_SOURCE=700")
         .flag("-DFD_HAS_HOSTED=1")
         .flag("-pthread")
-        .flag("-DFD_HAS_THREADS=1") // Ensure these thread flags are correct for your use case
+        .flag("-DFD_HAS_THREADS=1")
         .flag("-DFD_HAS_ATOMIC=1")
-        .flag("-mfpmath=sse")
         .flag("-falign-functions=32")
-        // .flag("-Xclang -target-feature -Xclang +fast-vector-fsqrt") // Clang specific, ensure it's intended
         .flag("-DFD_HAS_UCONTEXT=1")
         .flag("-DFD_BUILD_INFO=\"build/native/clang/info\"")
         .flag("-std=c17")
         .flag("-fwrapv");
 
-    if use_avx512 {
-        cc_build.flag("-DFD_HAS_AVX512=1");
-        // If specific AVX512 target features beyond what -march=native provides are needed for compilation,
-        // they could be added here. E.g. for clang:
-        // cc_build.flag("-mavx512f"); // or other specific AVX512 features
+    if is_x86_64 {
+        cc_build
+            .flag("-Werror") // fails on macos
+            .flag("-DFD_HAS_X86=1")
+            .flag("-DFD_IS_X86_64=1")
+            .flag("-DFD_HAS_SSE=1")
+            .flag("-DFD_HAS_AESNI=1")
+            .flag("-DFD_HAS_SHANI=1")
+            .flag("-mfpmath=sse")
+            .flag("-Wl,-z,relro,-z,now");
+        if use_avx512 {
+            cc_build
+                .flag("-DFD_HAS_AVX=1")
+                .flag("-DFD_HAS_AVX512=1")
+                .flag("-DFD_HAS_GFNI=1");
+        }
     }
 
     cc_build.compile("libballet_ed25519.a");
@@ -156,19 +170,11 @@ fn main() {
         .clang_arg("-DFD_USING_CLANG=1")
         .clang_arg("-march=native") // Bindgen also needs to know target architecture for correct parsing
         .clang_arg("-DFD_HAS_OPTIMIZATION=1")
-        .clang_arg("-DFD_HAS_SHANI=1")
         .clang_arg("-DFD_HAS_INT128=1")
         .clang_arg("-DFD_HAS_DOUBLE=1")
         .clang_arg("-DFD_HAS_ALLOCA=1")
         .clang_arg("-DFD_HAS_THREADS=1")
         .clang_arg("-DFD_HAS_OPENSSL=1")
-        .clang_arg("-DFD_HAS_X86=1")
-        .clang_arg("-DFD_HAS_SSE=1")
-        .clang_arg("-DFD_HAS_AVX=1")
-        .clang_arg("-DFD_HAS_GFNI=1")
-        .clang_arg("-DFD_IS_X86_64=1")
-        .clang_arg("-DFD_HAS_AESNI=1")
-        // .clang_arg("-DFD_HAS_AVX512=1") // This is now conditional
         .clang_arg("-D_XOPEN_SOURCE=700")
         .clang_arg("-DFD_HAS_HOSTED=1")
         .clang_arg("-DFD_HAS_ATOMIC=1")
@@ -176,8 +182,19 @@ fn main() {
         .clang_arg("-DFD_BUILD_INFO=\"build/native/clang/info\"")
         .clang_arg("-std=c17");
 
-    if use_avx512 {
-        bindgen_builder = bindgen_builder.clang_arg("-DFD_HAS_AVX512=1");
+    if is_x86_64 {
+        bindgen_builder = bindgen_builder
+            .clang_arg("-DFD_HAS_X86=1")
+            .clang_arg("-DFD_IS_X86_64=1")
+            .clang_arg("-DFD_HAS_SSE=1")
+            .clang_arg("-DFD_HAS_AESNI=1")
+            .clang_arg("-DFD_HAS_SHANI=1");
+        if use_avx512 {
+            bindgen_builder = bindgen_builder
+                .clang_arg("-DFD_HAS_AVX=1")
+                .clang_arg("-DFD_HAS_AVX512=1")
+                .clang_arg("-DFD_HAS_GFNI=1");
+        }
     }
 
     let bindings = bindgen_builder
