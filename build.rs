@@ -110,10 +110,9 @@ fn main() {
             .flag("-DFD_HAS_SHANI=1")
             .flag("-mfpmath=sse")
             .flag("-Wl,-z,relro,-z,now");
-    }
-
-    if use_avx512 {
-        cc_build.flag("-DFD_HAS_AVX512=1");
+        if use_avx512 {
+            cc_build.flag("-DFD_HAS_AVX512=1");
+        }
     }
 
     cc_build.compile("libballet_ed25519.a");
