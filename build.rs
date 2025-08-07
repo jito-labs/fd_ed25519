@@ -115,8 +115,8 @@ fn main() {
     if is_x86_64 {
         cc_build
             .flag("-Werror") // fails on macos
-            // .flag("-Wno-unused-parameter") // suppress unused parameter warnings
-            // .flag("-Wno-unused-function") // suppress unused function warnings
+            .flag("-Wno-unused-parameter") // suppress unused parameter warnings
+            .flag("-Wno-unused-function") // suppress unused function warnings
             .flag("-DFD_HAS_X86=1")
             .flag("-DFD_IS_X86_64=1")
             .flag("-DFD_HAS_SSE=1")
