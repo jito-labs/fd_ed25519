@@ -4,9 +4,6 @@ edition = "2021"
 version = "0.1.0"
 publish = false
 
-[lib]
-name = "lib"
-path = "./lib.rs"
 
 [dependencies]
 fd_ed25519 = { path = "../" }

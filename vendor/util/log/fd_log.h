@@ -140,8 +140,38 @@
    * Communications between threads on the same host can be done either
      by message passing or via shared memory. */
 
-#include "../env/fd_env.h"
-#include "../io/fd_io.h"
+#include <stdint.h>
+#include <stdio.h>
+#include <time.h>
+#include <stdarg.h>
+
+/* Standalone fd_log - basic type definitions */
+typedef uint64_t ulong;
+typedef uint32_t uint;
+typedef uint8_t uchar;
+
+/* Basic macros for standalone operation */
+#ifndef FD_FN_CONST
+#define FD_FN_CONST
+#endif
+#ifndef FD_FN_PURE  
+#define FD_FN_PURE
+#endif
+#ifndef FD_PROTOTYPES_BEGIN
+#define FD_PROTOTYPES_BEGIN
+#endif
+#ifndef FD_PROTOTYPES_END
+#define FD_PROTOTYPES_END
+#endif
+#ifndef FD_LIKELY
+#define FD_LIKELY(x) (x)
+#endif
+#ifndef FD_UNLIKELY
+#define FD_UNLIKELY(x) (x)
+#endif
+
+/* Clock function type */
+typedef long (*fd_clock_func_t)( void const * args );
 
 /* FD_LOG_NOTICE(( ... printf style arguments ... )) will send a message
    at the NOTICE level to the logger.  E.g. for a typical fd_log
@@ -309,7 +339,9 @@
   (uint)(((uchar const *)(b))[16]), (uint)(((uchar const *)(b))[17]), \
   (uint)(((uchar const *)(b))[18]), (uint)(((uchar const *)(b))[19])
 
+#ifndef FD_LOG_NAME_MAX
 #define FD_LOG_NAME_MAX (40UL)
+#endif
 
 FD_PROTOTYPES_BEGIN
 
@@ -502,13 +534,29 @@ extern ulong const fd_log_build_info_sz; /* == strlen( fd_log_build_info ) + 1UL
 
 /* Logging helper APIs ************************************************/
 
-/* fd_log_wallclock() reads the host's wallclock as ns since the UNIX
-   epoch GMT.  On x86, this uses clock_gettime/CLOCK_REALTIME under the
-   hood and is reasonably cheap (~25-50 ns nowadays).  But it still may
-   involve system calls under the hood and is much slower than, say,
-   RTSDC. */
+/* fd_log_wallclock_host( NULL ) reads the host's wallclock as ns since
+   the UNIX epoch GMT.  On x86, this uses clock_gettime/CLOCK_REALTIME
+   under the hood and is reasonably cheap (~25-50 ns nowadays).  But it
+   still may involve system calls under the hood and is much slower
+   than, say, RTSDC. */
 
-long fd_log_wallclock( void );
+long fd_log_wallclock_host( void const * _ ); /* fd_clock_func_t compat */
+
+/* fd_log_wallclock reads the log's timesource to get the ns since the
+   UNIX epoch GMT.  By default, this is fd_log_wallclock_host but the
+   thread group can be configures this to use an alternative time source
+   if desired. */
+
+long fd_log_wallclock( void ); /* FIXME: Make fd_clock_func_t compat */
+
+/* fd_log_wallclock_set configures the log to use "clock( args )" as its
+   time source.  This time source should report ns since the UNIX epoch
+   GMT.  There should be no concurrent users of the log when this is
+   called. */
+
+void
+fd_log_wallclock_set( fd_clock_func_t clock,
+                      void const *    args );
 
 /* fd_log_wallclock_cstr( t, buf ) pretty prints the wallclock
    measurement t as:
@@ -649,7 +697,6 @@ fd_log_private_boot_custom( int *        lock,
                             int          level_core,
                             int          log_fd,
                             char const * log_path );
-
 
 void
 fd_log_private_halt( void );

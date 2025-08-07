@@ -406,7 +406,7 @@ __extension__ typedef unsigned __int128 uint128;
 
 #if defined(__aarch64__)
 #define FD_ASM_LG_ALIGN(lg_n) ".align " #lg_n "\n"
-#elif defined(__x86_64__) || defined(__powerpc64__) || defined(__riscv) || defined(__s390x__)
+#elif defined(__x86_64__) || defined(__powerpc64__) || defined(__riscv)
 #define FD_ASM_LG_ALIGN(lg_n) ".p2align " #lg_n "\n"
 #endif
 
@@ -1075,6 +1075,22 @@ fd_type_pun_const( void const * p ) {
 
 #endif
 
+/* An ideal fd_clock_func_t is a function such that:
+
+     long dx = clock( args );
+     ... stuff ...
+     dx = clock( args ) - dx;
+
+   yields a strictly positive dx where dx approximates the amount of
+   wallclock time elapsed on the caller in some clock specific unit
+   (e.g. nanoseconds, CPU ticks, etc) for a reasonable amount of "stuff"
+   (including no "stuff").  args allows arbitrary clock specific context
+   to be passed to the clock implication.  (clocks that need a non-const
+   args can cast away the const in the implementation or cast the
+   function pointer as necessary.) */
+
+typedef long (*fd_clock_func_t)( void const * args );
+
 FD_PROTOTYPES_BEGIN
 
 /* fd_memcpy(d,s,sz):  On modern x86 in some circumstances, rep mov will
@@ -1277,6 +1293,8 @@ fd_hash_memcpy( ulong                    seed,
 #else
 #error "Unknown FD_TICKCOUNT_STYLE"
 #endif
+
+long _fd_tickcount( void const * _ ); /* fd_clock_func_t compat */
 
 #if FD_HAS_HOSTED
 

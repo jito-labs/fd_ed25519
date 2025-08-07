@@ -25,7 +25,7 @@ pub fn verify_with_fd_ed25519(txn: &VersionedTransaction, message_bytes: &[u8]) 
 }
 
 fn main() {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     for i in 0..1_000 {
         let recent_blockhash = Hash::new_unique();
         let kp = Keypair::new();
@@ -43,7 +43,7 @@ fn main() {
             "Mismatch between Solana and FireDancer at index {i}"
         );
 
-        let rand_idx = rng.gen_range(0..txn_bytes.len());
+        let rand_idx = rng.random_range(0..txn_bytes.len());
         txn_bytes[rand_idx] ^= 1; // flip bits
         assert!(
             !verify_with_fd_ed25519(&txn, &txn_bytes),
