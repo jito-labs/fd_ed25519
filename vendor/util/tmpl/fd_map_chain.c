@@ -352,6 +352,14 @@
 #define MAP_OPTIMIZE_RANDOM_ACCESS_REMOVAL 0
 #endif
 
+/* MAP_INSERT_FENCE prevents the compiler from reordering the two
+   operations: setting the next pointer of the new chain head and
+   updating the chain head. */
+
+#ifndef MAP_INSERT_FENCE
+#define MAP_INSERT_FENCE 0
+#endif
+
 /* Implementation *****************************************************/
 
 /* Constructors and verification log details on failure (rest only needs
@@ -777,6 +785,7 @@ MAP_(idx_query)( MAP_(t) *         join,
 #if MAP_OPTIMIZE_RANDOM_ACCESS_REMOVAL
         if( FD_UNLIKELY( !MAP_(private_idx_is_null)( pool[ ele_idx ].MAP_NEXT ) ) ) pool[ pool[ ele_idx ].MAP_NEXT ].MAP_PREV = pool[ ele_idx ].MAP_PREV;
         pool[ ele_idx ].MAP_PREV = MAP_(private_box)( MAP_(private_idx_null)() );
+        pool[ *head   ].MAP_PREV = MAP_(private_box)( ele_idx );
 #endif
         *cur = pool[ ele_idx ].MAP_NEXT;
         pool[ ele_idx ].MAP_NEXT = *head;
@@ -797,7 +806,9 @@ MAP_(idx_insert)( MAP_(t) *   join,
                   ulong       ele_idx,
                   MAP_ELE_T * pool ) {
 # if FD_TMPL_USE_HANDHOLDING && !MAP_MULTI
-  if( FD_UNLIKELY( MAP_(idx_query)( join, &pool[ ele_idx ].MAP_KEY, 0UL, pool ) ) ) FD_LOG_CRIT(( "ele_idx already in map" ));
+  if( FD_UNLIKELY( !MAP_(private_idx_is_null)( MAP_(idx_query)( join, &pool[ ele_idx ].MAP_KEY, MAP_(private_idx_null)(), pool ) ) ) ) {
+    FD_LOG_CRIT(( "ele_idx already in map" ));
+  }
 # endif
   MAP_(private_t) * map = MAP_(private)( join );
 
@@ -808,6 +819,9 @@ MAP_(idx_insert)( MAP_(t) *   join,
   pool[ ele_idx ].MAP_PREV = MAP_(private_box)( MAP_(private_idx_null)() );
 # endif
   pool[ ele_idx ].MAP_NEXT = *head;
+# if MAP_INSERT_FENCE
+  FD_COMPILER_MFENCE();
+# endif
   *head = MAP_(private_box)( ele_idx );
 
   return join;
@@ -936,14 +950,21 @@ MAP_(verify)( MAP_(t) const *   join,
   MAP_IDX_T const * chain = MAP_(private_chain_const)( map );
 
   ulong rem = ele_cnt; /* We can visit at most ele_cnt elements */
-  for( ulong chain_idx=0UL; chain_idx<chain_cnt; chain_idx++ )
+  for( ulong chain_idx=0UL; chain_idx<chain_cnt; chain_idx++ ) {
+    ulong prev_ele = MAP_(private_idx_null)();
+    (void)prev_ele;
     for( ulong ele_idx = MAP_(private_unbox)( chain[ chain_idx ] );
          !MAP_(private_idx_is_null)( ele_idx );
          ele_idx = MAP_(private_unbox)( pool[ ele_idx ].MAP_NEXT ) ) {
       MAP_TEST( rem ); rem--;                                                                      /* Check for cycles */
       MAP_TEST( ele_idx<ele_cnt );                                                                 /* Check valid element index */
       MAP_TEST( MAP_(private_chain_idx)( &pool[ ele_idx ].MAP_KEY, seed, chain_cnt )==chain_idx ); /* Check in correct chain */
+#if MAP_OPTIMIZE_RANDOM_ACCESS_REMOVAL
+      MAP_TEST( pool[ ele_idx ].MAP_PREV==prev_ele );
+      prev_ele = ele_idx;
+#endif
     }
+  }
 
   /* At this point, we know that there are no cycles in the map chains,
      all indices are inbounds and elements are in the correct chains for

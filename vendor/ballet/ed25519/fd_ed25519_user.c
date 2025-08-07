@@ -132,8 +132,7 @@ fd_ed25519_sign( uchar         sig[ static 64 ],
   return sig;
 }
 
-int
-fd_ed25519_verify( uchar const   msg[], /* msg_sz */
+int fd_ed25519_verify( uchar const   msg[], /* msg_sz */
                    ulong         msg_sz,
                    uchar const   sig[ static 64 ],
                    uchar const   public_key[ static 32 ],

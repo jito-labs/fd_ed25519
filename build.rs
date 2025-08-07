@@ -35,6 +35,7 @@ fn main() {
         "ballet/ed25519/avx512/fd_r43x6_ge.h",
         "ballet/ed25519/avx512/fd_r43x6.h",
         "util/fd_util.h",
+        "util/log/fd_log.h",
     ];
 
     // Base C and Assembly source files to be compiled
@@ -45,6 +46,7 @@ fn main() {
         "ballet/ed25519/fd_f25519.c",
         "ballet/sha512/fd_sha512.c",
         "util/fd_util.c",
+        "util/log/fd_log.c",
     ];
 
     let avx512_source_files = vec![
@@ -113,6 +115,8 @@ fn main() {
     if is_x86_64 {
         cc_build
             .flag("-Werror") // fails on macos
+            // .flag("-Wno-unused-parameter") // suppress unused parameter warnings
+            // .flag("-Wno-unused-function") // suppress unused function warnings
             .flag("-DFD_HAS_X86=1")
             .flag("-DFD_IS_X86_64=1")
             .flag("-DFD_HAS_SSE=1")

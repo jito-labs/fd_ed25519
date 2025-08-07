@@ -276,7 +276,6 @@ pub fn fd_ed25519_strerror(err: std::os::raw::c_int) -> &'static str {
 mod tests {
     use base64::{prelude::BASE64_STANDARD, Engine};
     use hex_literal::hex;
-    use rand::{rngs::OsRng, RngCore};
     use solana_sdk::{pubkey::Pubkey, transaction::VersionedTransaction};
 
     // If this test module is inside src/lib.rs, use super::*
@@ -397,12 +396,12 @@ mod tests {
     fn test_sign_and_verify_random_message() {
         let mut sha_ctx = new_sha_context();
         let mut private_key_seed = [0u8; FD_ED25519_PRIVATE_KEY_LEN];
-        OsRng.fill_bytes(&mut private_key_seed);
+        rand::fill(&mut private_key_seed);
 
         let public_key = fd_ed25519_public_from_private(&private_key_seed, &mut new_sha_context());
 
         let mut msg = [0u8; 128];
-        OsRng.fill_bytes(&mut msg);
+        rand::fill(&mut msg);
 
         let sig = fd_ed25519_sign(&msg, &public_key, &private_key_seed, &mut sha_ctx);
 

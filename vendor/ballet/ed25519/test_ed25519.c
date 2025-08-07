@@ -626,7 +626,7 @@ test_affine_is_small_order( FD_PARAM_UNUSED fd_rng_t * rng ) {
   FD_TEST( ! fd_ed25519_affine_is_small_order( r ) );
 
   // Small order points
-  fd_hex_decode(s, "0100000000000000000000000000000000000000000000000000000000000000", 32 );
+  fd_hex_decode(s, "y", 32 );
   fd_ed25519_point_frombytes( r, s );
   FD_TEST( fd_ed25519_affine_is_small_order( r ) );
 

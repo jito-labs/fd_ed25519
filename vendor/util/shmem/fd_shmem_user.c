@@ -110,8 +110,8 @@ fd_shmem_private_map_rand( ulong size,
     long n = getrandom( &ret_addr, sizeof(ret_addr), 0 );
     if( FD_UNLIKELY( n!=sizeof(ret_addr) ) ) FD_LOG_ERR(( "could not generate random address, getrandom() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
 
-    /* Assume 48-bit virtual addressing */
-    ret_addr &= 0x0000FFFFFFFFFFFFUL;
+    /* Assume 47-bit virtual addressing */
+    ret_addr &= 0x00007FFFFFFFFFFFUL;
     ret_addr  = fd_ulong_align_up( ret_addr, align );
 
     if( fd_shmem_private_grab_region( ret_addr, size )!=MAP_FAILED ) {
@@ -130,7 +130,8 @@ fd_shmem_join( char const *               name,
                int                        mode,
                fd_shmem_joinleave_func_t  join_func,
                void *                     context,
-               fd_shmem_join_info_t *     opt_info ) {
+               fd_shmem_join_info_t *     opt_info,
+               int                        lock_pages ) {
 
   /* Check input args */
 
@@ -228,17 +229,21 @@ fd_shmem_join( char const *               name,
     return NULL;
   }
 
-  /* Lock this region in DRAM to prevent it going to swap and (try) to
-     keep the virtual to physical DRAM mapping fixed for the join
-     duration.  Also advise the kernel to not dump this region to avoid
-     large shared mappings in concurrent use by multiple processes
-     destroying the system with core files if a bunch of thread using
-     this mapping seg fault concurrently. */
 
-  if( FD_UNLIKELY( fd_numa_mlock( shmem, sz ) ) )
-    FD_LOG_WARNING(( "fd_numa_mlock(\"%s\",%lu KiB) failed (%i-%s); attempting to continue",
-                     path, sz>>10, errno, fd_io_strerror( errno ) ));
+  if( FD_LIKELY( lock_pages ) ) {
+    /* Lock this region in DRAM to prevent it going to swap and (try) to
+       keep the virtual to physical DRAM mapping fixed for the join
+       duration. */
 
+    if( FD_UNLIKELY( fd_numa_mlock( shmem, sz ) ) )
+      FD_LOG_WARNING(( "fd_numa_mlock(\"%s\",%lu KiB) failed (%i-%s); attempting to continue",
+                      path, sz>>10, errno, fd_io_strerror( errno ) ));
+  }
+
+  /* Advise the kernel to not dump this region to avoid
+      large shared mappings in concurrent use by multiple processes
+      destroying the system with core files if a bunch of thread using
+      this mapping seg fault concurrently. */
   if( FD_UNLIKELY( madvise( shmem, sz, MADV_DONTDUMP ) ) )
     FD_LOG_WARNING(( "madvise(\"%s\",%lu KiB) failed (%i-%s); attempting to continue",
                      path, sz>>10, errno, fd_io_strerror( errno ) ));
@@ -554,6 +559,24 @@ fd_shmem_leave_anonymous( void *                 join,
   fd_shmem_private_map_cnt--;
   FD_SHMEM_UNLOCK;
   return 0;
+}
+
+fd_shmem_join_info_t const *
+fd_shmem_iter_begin( void ) {
+  fd_shmem_join_info_t const * map = fd_shmem_private_map;
+  for( ulong slot_idx=0UL; slot_idx<FD_SHMEM_PRIVATE_MAP_SLOT_CNT; slot_idx++ ) {
+    if( !fd_shmem_private_map_key_inval( map[slot_idx].key ) ) return &map[slot_idx];
+  }
+  return NULL;
+}
+
+fd_shmem_join_info_t const *
+fd_shmem_iter_next( fd_shmem_join_info_t const * iter ) {
+  fd_shmem_join_info_t const * map = fd_shmem_private_map;
+  for( ulong slot_idx=(ulong)(iter-map) + 1UL; slot_idx<FD_SHMEM_PRIVATE_MAP_SLOT_CNT; slot_idx++ ) {
+    if( !fd_shmem_private_map_key_inval( map[slot_idx].key ) ) return &map[slot_idx];
+  }
+  return NULL;
 }
 
 #endif
