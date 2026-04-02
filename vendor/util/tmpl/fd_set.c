@@ -62,6 +62,10 @@
 
      ulong my_set_first( my_set_t const * set ); // Return in [0,max) on success, >=max if empty set
 
+     // Return the highest indexed element in the set
+
+     ulong my_set_last( my_set_t const * set );  // Return in [0,max) on success, >=max if empty set
+
      // Two pair of functions for writing efficient iterators over all
      // members of sparse sets.  The first pair is a destructive
      // iterator:
@@ -276,6 +280,16 @@ SET_(first)( SET_(t) const * set ) {
   return ~0UL;
 }
 
+FD_FN_PURE static inline ulong
+SET_(last)( SET_(t) const * set ) {
+  ulong word_cnt = (ulong)SET_(word_cnt);
+  for( ulong i=word_cnt; i>0UL; i-- ) {
+    ulong w = set[i-1];
+    if( w ) return ((i-1)<<6) + (ulong)fd_ulong_find_msb( w );
+  }
+  return ~0UL;
+}
+
 FD_FN_UNUSED static ulong /* Work around -Winline */
 SET_(iter_next)( SET_(t) * set,
                  ulong     j ) {                     /* We've considered all bits up to and including j */
@@ -334,7 +348,7 @@ SET_(insert_if)( SET_(t) * set,
                  int       c,
                  ulong     idx ) {
 # if FD_TMPL_USE_HANDHOLDING
-  if( FD_UNLIKELY( idx>=(ulong)(SET_MAX) ) ) FD_LOG_CRIT(( "idx out of bounds" ));
+  if( FD_UNLIKELY( c && idx>=(ulong)(SET_MAX) ) ) FD_LOG_CRIT(( "idx out of bounds" ));
 # endif
   set[ idx >> 6 ] |= ((ulong)!!c) << (idx & 63UL);
   return set;
@@ -345,7 +359,7 @@ SET_(remove_if)( SET_(t) * set,
                  int       c,
                  ulong     idx ) {
 # if FD_TMPL_USE_HANDHOLDING
-  if( FD_UNLIKELY( idx>=(ulong)(SET_MAX) ) ) FD_LOG_CRIT(( "idx out of bounds" ));
+  if( FD_UNLIKELY( c && idx>=(ulong)(SET_MAX) ) ) FD_LOG_CRIT(( "idx out of bounds" ));
 # endif
   set[ idx >> 6 ] &= ~(((ulong)!!c) << (idx & 63UL));
   return set;

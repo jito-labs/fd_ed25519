@@ -21,6 +21,7 @@
 #define _GNU_SOURCE
 
 #include "fd_log.h"
+#include "fd_backtrace.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,9 +33,6 @@
 #include <signal.h>
 #include <sched.h>
 #include <time.h>
-#include <string.h>
-#include <sys/types.h>
-#include <limits.h>
 #if defined(__linux__)
 #include <syscall.h>
 #endif
@@ -48,107 +46,7 @@
 #include <sys/stat.h> /* S_IRUSR */
 #endif /* defined(__FreeBSD__) */
 
-/* Standalone stubs for fd-specific functionality */
-#define FD_TL __thread
-#define FD_TILE_MAX 256
-#define FD_VOLATILE(x) (x)
-#define FD_VOLATILE_CONST(x) (x) 
-#define FD_COMPILER_MFENCE() __sync_synchronize()
-#define FD_ATOMIC_CAS(ptr,old,new) __sync_bool_compare_and_swap(ptr,old,new)
-#define FD_ATOMIC_FETCH_AND_ADD(ptr,val) __sync_fetch_and_add(ptr,val)
-#define FD_ONCE_BEGIN static int _once = 0; if (!_once) { _once = 1;
-#define FD_ONCE_END }
-#define FD_YIELD() sched_yield()
-#define FD_SPIN_PAUSE() __asm__ __volatile__("pause" ::: "memory")
-#define FD_HAS_THREADS 1
-#define FD_HAS_ATOMIC 1
-#define FD_IMPORT_CSTR(name,path) char const name[] = ""; ulong const name##_sz = 1UL;
-
-/* Basic CPU set operations stubs */
-typedef struct { uint64_t mask; } fd_cpuset_t;
-#define FD_CPUSET_DECL(name) fd_cpuset_t name[1] = {{0}}
-static inline int fd_cpuset_getaffinity(pid_t pid, fd_cpuset_t *set) { (void)pid; set->mask = 1; return 0; }
-static inline ulong fd_cpuset_first(fd_cpuset_t *set) { (void)set; return 0; }
-static inline ulong fd_cpuset_cnt(fd_cpuset_t *set) { (void)set; return 1; }
-
-/* String utility function stubs */
-static inline char *fd_cstr_init(char *dst) { dst[0] = '\0'; return dst; }
-static inline char *fd_cstr_append_cstr_safe(char *dst, char const *src, ulong max_len) {
-  strncat(dst, src, max_len); return dst; 
-}
-static inline void fd_cstr_fini(char *dst) { (void)dst; }
-static inline ulong fd_cstr_hash_append(ulong hash, char const *str) {
-  for (char const *p = str; *p; p++) hash = hash * 31 + (ulong)*p;
-  return hash;
-}
-static inline ulong fd_ulong_hash(ulong x) { return x * 11400714819323198485ULL; }
-static inline int fd_cstr_to_int(char const *str) { return atoi(str); }
-static inline ulong fd_cstr_printf(char *dst, ulong dst_max, ulong *len, char const *fmt, ...) {
-  va_list ap; va_start(ap, fmt); int n = vsnprintf(dst, dst_max, fmt, ap); va_end(ap);
-  *len = (n >= 0 && n < (int)dst_max) ? (ulong)n : dst_max-1;
-  return *len;
-}
-static inline char *fd_cstr_append_text(char *dst, char const *src, ulong len) {
-  strncat(dst, src, len); return dst;
-}
-static inline char *fd_cstr_append_char(char *dst, char c) {
-  ulong len = strlen(dst); dst[len] = c; dst[len+1] = '\0'; return dst;
-}
-static inline char *fd_cstr_append_uint_as_text(char *dst, char pad, char term, uint val, ulong width) {
-  char buf[32]; snprintf(buf, sizeof(buf), "%0*u", (int)width, val);
-  strcat(dst, buf); (void)pad; (void)term; return dst;
-}
-static inline char *fd_cstr_append_fxp10_as_text(char *dst, char pad, char term, ulong frac, ulong val, ulong width) {
-  char buf[64]; snprintf(buf, sizeof(buf), "%0*lu.%09lu", (int)(width-10), val/1000000000, val%1000000000);
-  strcat(dst, buf); (void)pad; (void)term; (void)frac; return dst;
-}
-
-/* Basic utility functions */
-static inline ulong fd_ulong_if(int cond, ulong true_val, ulong false_val) {
-  return cond ? true_val : false_val;
-}
-static inline int fd_int_if(int cond, int true_val, int false_val) {
-  return cond ? true_val : false_val;
-}
-static inline char fd_char_if(int cond, char true_val, char false_val) {
-  return cond ? true_val : false_val;
-}
-static inline ulong fd_ulong_min(ulong a, ulong b) { return a < b ? a : b; }
-static inline long fd_long_min(long a, long b) { return a < b ? a : b; }
-static inline long fd_long_abs(long x) { return x < 0 ? -x : x; }
-static inline int fd_int_max(int a, int b) { return a > b ? a : b; }
-static inline int fd_int_abs(int x) { return x < 0 ? -x : x; }
-static inline int fd_isalnum(int c) { return isalnum(c); }
-static inline int fd_ispunct(int c) { return ispunct(c); }
-
-/* Memory operations */
-static inline void *fd_memcpy(void *dst, void const *src, ulong sz) { return memcpy(dst, src, sz); }
-static inline void fd_msan_unpoison(void *ptr, ulong sz) { (void)ptr; (void)sz; }
-
-/* I/O operations stubs */
-static inline char const *fd_io_strerror(int err) { return strerror(err); }
-static inline void fd_io_write(int fd, void const *buf, ulong min_sz, ulong max_sz, ulong *written) {
-  ssize_t n = write(fd, buf, max_sz);
-  *written = (n > 0) ? (ulong)n : 0;
-  (void)min_sz;
-}
-
-/* Environment operations stubs */
-static inline ulong fd_env_strip_cmdline_ulong(int *pargc, char ***pargv, char const *key, char const *env_key, ulong def) {
-  (void)pargc; (void)pargv; (void)key;
-  char const *env = getenv(env_key);
-  return env ? (ulong)strtoull(env, NULL, 10) : def;
-}
-static inline int fd_env_strip_cmdline_int(int *pargc, char ***pargv, char const *key, char const *env_key, int def) {
-  (void)pargc; (void)pargv; (void)key;
-  char const *env = getenv(env_key);
-  return env ? atoi(env) : def;
-}
-static inline char const *fd_env_strip_cmdline_cstr(int *pargc, char ***pargv, char const *key, char const *env_key, char const *def) {
-  (void)pargc; (void)pargv; (void)key;
-  char const *env = getenv(env_key);
-  return env ? env : def;
-}
+#include "../tile/fd_tile_private.h"
 
 #ifdef __has_include
 #if __has_include("../../app/fdctl/version.h")
@@ -167,7 +65,7 @@ static inline char const *fd_env_strip_cmdline_cstr(int *pargc, char ***pargv, c
 #endif
 
 #ifdef FD_BUILD_INFO
-FD_IMPORT_CSTR( fd_log_build_info, FD_BUILD_INFO )
+FD_IMPORT_CSTR( fd_log_build_info, FD_BUILD_INFO );
 #else
 char const  fd_log_build_info[1] __attribute__((aligned(1))) = { '\0' };
 ulong const fd_log_build_info_sz                             = 1UL;
@@ -530,7 +428,7 @@ fd_log_wallclock_cstr( long   now,
     if( FD_UNLIKELY( !localtime_broken && !localtime_r( &t, tm ) ) ) localtime_broken = 1;
     if( FD_UNLIKELY( localtime_broken ) ) { /* If localtime_r doesn't work, pretty print as a raw UNIX time */
       /* Note: These can all run in parallel */
-      fd_cstr_append_fxp10_as_text( buf,    ' ', fd_char_if( now<0L, '-', '\0' ), 9UL, (ulong)fd_long_abs( now ), 29UL );
+      fd_cstr_append_fxp10_as_text( buf,    ' ', fd_char_if( now<0L, '-', '\0' ), 9UL, fd_long_abs( now ), 29UL );
       fd_cstr_append_text         ( buf+29, " s UNIX",                                                      7UL );
       fd_cstr_append_char         ( buf+36, '\0'                                                                );
       return buf;
@@ -572,7 +470,7 @@ fd_log_wallclock_cstr( long   now,
   fd_cstr_append_fxp10_as_text( buf+17, '0', '\0', 9UL, ns,           12UL );
   fd_cstr_append_text         ( buf+29, " GMT",                        4UL );
   fd_cstr_append_char         ( buf+33, fd_char_if( tz<0, '-', '+' )       );
-  fd_cstr_append_uint_as_text ( buf+34, '0', '\0', (uint)fd_int_abs( tz ),   2UL );
+  fd_cstr_append_uint_as_text ( buf+34, '0', '\0', fd_int_abs( tz ),   2UL );
   fd_cstr_append_char         ( buf+36, '\0'                               );
   return buf;
 }
@@ -592,7 +490,14 @@ fd_log_sleep( long dt ) {
   struct timespec rem[1];
   req->tv_sec  = (time_t)( ((ulong)ns_dt) / ((ulong)1e9) ); /* in [0,2^31-1] */
   req->tv_nsec = (long)  ( ((ulong)ns_dt) % ((ulong)1e9) ); /* in [0,1e9) */
-  if( FD_UNLIKELY( nanosleep( req, rem ) ) && FD_LIKELY( errno==EINTR ) ) dt += ((long)1e9)*((long)rem->tv_sec) + rem->tv_nsec;
+  int sleep_res;
+#if defined(__linux__)
+  /* Always use clock_nanosleep on Linux to be predictable */
+  sleep_res = clock_nanosleep( CLOCK_REALTIME, 0, req, rem );
+#else
+  sleep_res = nanosleep( req, rem );
+#endif
+  if( FD_UNLIKELY( sleep_res ) && FD_LIKELY( errno==EINTR ) ) dt += ((long)1e9)*((long)rem->tv_sec) + rem->tv_nsec;
   return dt;
 }
 
@@ -638,6 +543,7 @@ static int fd_log_private_level_stderr;  /* 0 outside boot/halt, init at boot */
 static int fd_log_private_level_flush;   /* 0 outside boot/halt, init at boot */
 static int fd_log_private_level_core;    /* 0 outside boot/halt, init at boot */
 static int fd_log_private_unclean_exit;
+static int fd_log_private_signal_handler;
 
 int fd_log_colorize     ( void ) { return FD_VOLATILE_CONST( fd_log_private_colorize      ); }
 int fd_log_level_logfile( void ) { return FD_VOLATILE_CONST( fd_log_private_level_logfile ); }
@@ -653,6 +559,7 @@ void fd_log_level_core_set   ( int level ) { FD_VOLATILE( fd_log_private_level_c
 
 int fd_log_private_logfile_fd( void ) { return FD_VOLATILE_CONST( fd_log_private_fileno ); }
 
+void fd_log_enable_signal_handler( void ) { fd_log_private_signal_handler = 1; }
 void fd_log_enable_unclean_exit( void ) { fd_log_private_unclean_exit = 1; }
 
 /* Buffer size used for vsnprintf calls (this is also one more than the
@@ -665,6 +572,12 @@ void fd_log_enable_unclean_exit( void ) { fd_log_private_unclean_exit = 1; }
 
 static int fd_log_private_shared_lock_local[1] __attribute__((aligned(128))); /* location of lock if boot mmap fails */
        int * fd_log_private_shared_lock  = fd_log_private_shared_lock_local;  /* Local lock outside boot/halt, init at boot */
+
+/* File descriptor to restore when logging a message that will terminate
+   the application, incase it was redirected to some other consumer in
+   the process which will not be able to process it in time */
+static int fd_log_private_stderr_fileno = STDERR_FILENO;
+int fd_log_private_restore_stderr = STDERR_FILENO;
 
 void
 fd_log_private_fprintf_0( int          fd,
@@ -919,7 +832,7 @@ fd_log_private_1( int          level,
 
         if( to_stderr ) {
           char * then_short_cstr = then_cstr+5; then_short_cstr[21] = '\0'; /* Lop off the year, ns resolution and timezone */
-          fd_log_private_fprintf_0( STDERR_FILENO, "SNIP    %s %-6lu %-4s %-4s stopped repeating (%lu identical messages)\n",
+          fd_log_private_fprintf_0( fd_log_private_stderr_fileno, "SNIP    %s %-6lu %-4s %-4s stopped repeating (%lu identical messages)\n",
                                     then_short_cstr, tid,cpu,thread, dedup_cnt+1UL );
         }
 
@@ -950,7 +863,7 @@ fd_log_private_1( int          level,
                                     fd_log_app(),fd_log_group(),thread, dedup_cnt+1UL );
         if( to_stderr ) {
           char * now_short_cstr = now_cstr+5; now_short_cstr[21] = '\0'; /* Lop off the year, ns resolution and timezone */
-          fd_log_private_fprintf_0( STDERR_FILENO, "SNIP    %s %-6lu %-4s %-4s repeating (%lu identical messages)\n",
+          fd_log_private_fprintf_0( fd_log_private_stderr_fileno, "SNIP    %s %-6lu %-4s %-4s repeating (%lu identical messages)\n",
                                     now_short_cstr, tid,cpu,thread, dedup_cnt+1UL );
         }
         dedup_last = now;
@@ -995,7 +908,7 @@ fd_log_private_1( int          level,
       /* 7 */ TEXT_RED TEXT_BOLD TEXT_UNDERLINE TEXT_BLINK "EMERG  " TEXT_NORMAL
     };
     char * now_short_cstr = now_cstr+5; now_short_cstr[21] = '\0'; /* Lop off the year, ns resolution and timezone */
-    fd_log_private_fprintf_0( STDERR_FILENO, "%s %s %-6lu %-4s %-4s %s(%i): %s\n",
+    fd_log_private_fprintf_0( fd_log_private_stderr_fileno, "%s %s %-6lu %-4s %-4s %s(%i): %s\n",
                               fd_log_private_colorize ? color_level_cstr[level] : level_cstr[level],
                               now_short_cstr, tid,cpu,thread, file, line, msg );
   }
@@ -1012,6 +925,15 @@ fd_log_private_2( int          level,
                   int          line,
                   char const * func,
                   char const * msg ) {
+  if( level<fd_log_level_core() && fd_log_private_restore_stderr!=-1 ) {
+    /* Restore stderr to original fd in case it was redirected to
+       something that won't be able to process the fatal message */
+
+    fd_log_private_stderr_fileno = fd_log_private_restore_stderr;
+    fd_log_private_restore_stderr = -1;
+
+  }
+
   fd_log_private_1( level, now, file, line, func, msg );
 
   if( level<fd_log_level_core() ) {
@@ -1031,7 +953,7 @@ fd_log_private_raw_2( char const * file,
                       int          line,
                       char const * func,
                       char const * msg ) {
-  fd_log_private_fprintf_nolock_0( STDERR_FILENO, "%s(%i)[%s]: %s\n", file, line, func, msg );
+  fd_log_private_fprintf_nolock_0( fd_log_private_stderr_fileno, "%s(%i)[%s]: %s\n", file, line, func, msg );
 # if defined(__linux__)
   syscall( SYS_exit_group, 1 );
 # else
@@ -1102,43 +1024,32 @@ static void
 fd_log_private_sig_abort( int         sig,
                           siginfo_t * info,
                           void *      context ) {
-  (void)info; (void)context;
+  (void)sig; (void)info; (void)context;
 
-  /* Hopefully all out streams are idle now and we have flushed out
-     all non-logging activity ... log a backtrace */
+  /* Thread could have caught signal while holding a lock.
+     Hack around this re-entrancy problem by pointing the log lock to
+     a dummy buffer. */
+  int lock = 0;
+  fd_log_private_shared_lock = &lock;
+
+#define FD_LOG_ERR_NOEXIT(a) do { long _fd_log_msg_now = fd_log_wallclock(); fd_log_private_1( 4, _fd_log_msg_now, __FILE__, __LINE__, __func__, fd_log_private_0 a ); } while(0)
+  FD_LOG_ERR_NOEXIT(( "Received signal %s", fd_io_strsignal( sig ) ));
+#undef FD_LOG_ERR_NOEXIT
 
 # if FD_HAS_BACKTRACE
 
-  void * btrace[128];
+  void * btrace[ 128UL ];
   int btrace_cnt = backtrace( btrace, 128 );
 
-  int log_fileno = FD_VOLATILE_CONST( fd_log_private_fileno );
-  if( log_fileno!=-1 ) {
-    fd_log_private_fprintf_0( log_fileno, "Caught signal %i, backtrace:\n", sig );
-    backtrace_symbols_fd( btrace, btrace_cnt, log_fileno );
-    fsync( log_fileno );
-  }
+  fd_backtrace_log( btrace, (ulong)btrace_cnt );
 
-  fd_log_private_fprintf_0( STDERR_FILENO, "\nCaught signal %i, backtrace:\n", sig );
-  backtrace_symbols_fd( btrace, btrace_cnt, STDERR_FILENO );
-  fsync( STDERR_FILENO );
+# endif
 
-# else /* !FD_HAS_BACKTRACE */
-
-  int log_fileno = FD_VOLATILE_CONST( fd_log_private_fileno );
-  if( log_fileno!=-1 ) fd_log_private_fprintf_0( log_fileno, "Caught signal %i.\n", sig );
-
-  fd_log_private_fprintf_0( STDERR_FILENO, "\nCaught signal %i.\n", sig );
-
-# endif /* FD_HAS_BACKTRACE */
-
-  /* Do final log cleanup */
-
-  fd_log_private_cleanup();
-
-  usleep( (useconds_t)1000000 ); /* Give some time to let streams drain */
-
-  raise( sig ); /* Continue with the original handler (probably the default and that will produce the core) */
+  /* Returning is going to cause SIGSYS since it's probably not allowed
+     in the sandbox, which is OK.  The parent process will terminate
+     everything anyway.  If we allow rt_sigreturn to be called in the
+     sandbox, then we will get a correct signal. */
+  return;
 }
 
 static void
@@ -1279,7 +1190,7 @@ fd_log_private_boot( int  *   pargc,
     if( cstr && !strcmp( cstr, "truecolor" ) ) { colorize = 1; break; }
 
     cstr = fd_env_strip_cmdline_cstr( NULL, NULL, NULL, "TERM", NULL );
-    if( cstr && !strcmp( cstr, "xterm-256color" ) ) { colorize = 1; break; }
+    if( cstr && strstr( cstr, "256color" ) ) { colorize = 1; break; }
 
   } while(0);
   fd_log_colorize_set( colorize );
@@ -1292,7 +1203,7 @@ fd_log_private_boot( int  *   pargc,
   /* Hook up signal handlers */
 
   int log_backtrace = fd_env_strip_cmdline_int( pargc, pargv, "--log-backtrace", "FD_LOG_BACKTRACE", 1 );
-  if( log_backtrace ) {
+  if( log_backtrace || fd_log_private_signal_handler ) {
 
 #   if FD_HAS_BACKTRACE
     /* If libgcc isn't already linked into the program when a trapped
@@ -1305,46 +1216,30 @@ fd_log_private_boot( int  *   pargc,
        for finding this.) */
 
     void * btrace[128];
-    int btrace_cnt = backtrace( btrace, 128 );
-    int fd = open( "/dev/null", O_WRONLY | O_APPEND );
-    if( FD_UNLIKELY( fd==-1 ) )
-      fd_log_private_fprintf_0( STDERR_FILENO,
-                                "open( \"/dev/null\", O_WRONLY | O_APPEND ) failed (%i-%s); attempting to continue\n",
-                                errno, fd_io_strerror( errno ) );
-    else {
-      backtrace_symbols_fd( btrace, btrace_cnt, fd );
-      if( FD_UNLIKELY( close( fd ) ) )
-        fd_log_private_fprintf_0( STDERR_FILENO,
-                                  "close( \"/dev/null\" ) failed (%i-%s); attempting to continue\n",
-                                  errno, fd_io_strerror( errno ) );
-    }
+    (void)backtrace( btrace, 128 );
 #   endif /* FD_HAS_BACKTRACE */
 
     /* This is all overridable POSIX sigs whose default behavior is to
        abort the program.  It will backtrace and then fallback to the
        default behavior. */
-    if( !fd_log_private_unclean_exit ) {
-      fd_log_private_sig_trap( SIGABRT   );
-      fd_log_private_sig_trap( SIGALRM   );
-      fd_log_private_sig_trap( SIGFPE    );
-      fd_log_private_sig_trap( SIGHUP    );
-      fd_log_private_sig_trap( SIGILL    );
-      fd_log_private_sig_trap( SIGINT    );
-      fd_log_private_sig_trap( SIGQUIT   );
-      fd_log_private_sig_trap( SIGPIPE   );
-      fd_log_private_sig_trap( SIGSEGV   );
-      fd_log_private_sig_trap( SIGTERM   );
-      fd_log_private_sig_trap( SIGUSR1   );
-      fd_log_private_sig_trap( SIGUSR2   );
-      fd_log_private_sig_trap( SIGBUS    );
-      fd_log_private_sig_trap( SIGPOLL   );
-      fd_log_private_sig_trap( SIGPROF   );
-      fd_log_private_sig_trap( SIGSYS    );
-      fd_log_private_sig_trap( SIGTRAP   );
-      fd_log_private_sig_trap( SIGVTALRM );
-      fd_log_private_sig_trap( SIGXCPU   );
-      fd_log_private_sig_trap( SIGXFSZ   );
-    }
+    fd_log_private_sig_trap( SIGABRT   );
+    fd_log_private_sig_trap( SIGALRM   );
+    fd_log_private_sig_trap( SIGFPE    );
+    fd_log_private_sig_trap( SIGHUP    );
+    fd_log_private_sig_trap( SIGILL    );
+    fd_log_private_sig_trap( SIGQUIT   );
+    fd_log_private_sig_trap( SIGPIPE   );
+    fd_log_private_sig_trap( SIGSEGV   );
+    fd_log_private_sig_trap( SIGUSR1   );
+    fd_log_private_sig_trap( SIGUSR2   );
+    fd_log_private_sig_trap( SIGBUS    );
+    fd_log_private_sig_trap( SIGPOLL   );
+    fd_log_private_sig_trap( SIGPROF   );
+    fd_log_private_sig_trap( SIGSYS    );
+    fd_log_private_sig_trap( SIGTRAP   );
+    fd_log_private_sig_trap( SIGVTALRM );
+    fd_log_private_sig_trap( SIGXCPU   );
+    fd_log_private_sig_trap( SIGXFSZ   );
   }
 
   /* Hook up the permanent log */
@@ -1436,6 +1331,36 @@ fd_log_private_boot_custom( int *        lock,
     FD_VOLATILE( fd_log_private_fileno ) = log_fd;
   } else {
     FD_VOLATILE( fd_log_private_fileno ) = fd_log_private_open_path( 0, log_path );
+  }
+
+  if( FD_UNLIKELY( fd_log_private_signal_handler ) ) {
+    /* See note above about needing to prime backtrace */
+#   if FD_HAS_BACKTRACE
+    void * btrace[128];
+    (void)backtrace( btrace, 128 );
+#   endif
+
+    /* This is all overridable POSIX sigs whose default behavior is to
+       abort the program.  It will backtrace and then fallback to the
+       default behavior. */
+    fd_log_private_sig_trap( SIGABRT   );
+    fd_log_private_sig_trap( SIGALRM   );
+    fd_log_private_sig_trap( SIGFPE    );
+    fd_log_private_sig_trap( SIGHUP    );
+    fd_log_private_sig_trap( SIGILL    );
+    fd_log_private_sig_trap( SIGQUIT   );
+    fd_log_private_sig_trap( SIGPIPE   );
+    fd_log_private_sig_trap( SIGSEGV   );
+    fd_log_private_sig_trap( SIGUSR1   );
+    fd_log_private_sig_trap( SIGUSR2   );
+    fd_log_private_sig_trap( SIGBUS    );
+    fd_log_private_sig_trap( SIGPOLL   );
+    fd_log_private_sig_trap( SIGPROF   );
+    fd_log_private_sig_trap( SIGSYS    );
+    fd_log_private_sig_trap( SIGTRAP   );
+    fd_log_private_sig_trap( SIGVTALRM );
+    fd_log_private_sig_trap( SIGXCPU   );
+    fd_log_private_sig_trap( SIGXFSZ   );
   }
 
   /* At this point, logging online */

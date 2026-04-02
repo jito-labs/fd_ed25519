@@ -132,7 +132,8 @@ fd_ed25519_sign( uchar         sig[ static 64 ],
   return sig;
 }
 
-int fd_ed25519_verify( uchar const   msg[], /* msg_sz */
+int
+fd_ed25519_verify( uchar const   msg[], /* msg_sz */
                    ulong         msg_sz,
                    uchar const   sig[ static 64 ],
                    uchar const   public_key[ static 32 ],
@@ -188,7 +189,7 @@ int fd_ed25519_verify( uchar const   msg[], /* msg_sz */
         }
     */
   if( FD_UNLIKELY( res ) ) {
-    return res == 1 ? FD_ED25519_ERR_PUBKEY : FD_ED25519_ERR_SIG;
+    return res == -1 ? FD_ED25519_ERR_PUBKEY : FD_ED25519_ERR_SIG;
   }
   if( FD_UNLIKELY( fd_ed25519_affine_is_small_order(Aprime) ) ) {
     return FD_ED25519_ERR_PUBKEY;
@@ -276,7 +277,7 @@ int fd_ed25519_verify_batch_single_msg( uchar const   msg[], /* msg_sz */
 
     /* Check public key and point r */
     if( FD_UNLIKELY( res ) ) {
-      return res == 1 ? FD_ED25519_ERR_PUBKEY : FD_ED25519_ERR_SIG;
+      return res == -1 ? FD_ED25519_ERR_PUBKEY : FD_ED25519_ERR_SIG;
     }
     if( FD_UNLIKELY( fd_ed25519_affine_is_small_order(&Aprime[j]) ) ) {
       return FD_ED25519_ERR_PUBKEY;
