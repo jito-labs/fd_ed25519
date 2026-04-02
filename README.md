@@ -28,11 +28,11 @@ Found 2 outliers among 100 measurements (2.00%)
 The `ballet` C library source code is expected to be placed within the `vendor/` directory at the root of this Rust project:
 
 Files taken from:
-https://github.com/firedancer-io/firedancer/tree/v0.703.20300
+https://github.com/firedancer-io/firedancer/tree/b623123e82238b8bbee407648271cff36342c6df
 
 Directories:
-- `ballet`: Copied `ed25519`, `fiat-crypto`, `hex`, and `sha512` verbatim from FD. Only modified `fd_ballet.h` to remove unnecessary imports
-- `util`: Copied verbatim from FD, `fd_log` modified to avoid extra imports
+- `ballet`: Copied `ed25519`, `fiat-crypto`, `hex`, and `sha512` from FD. `fd_ballet.h` remains a narrow local shim that omits non-vendored `shred`, `bmtree`, and `blake3` includes.
+- `util`: `fd_util_base.h`, `fd_util.h`, `fd_util.c`, `fd_log.h`, and `fd_log.c` now track `v0.8` tip. `vendor/util/log/Local.mk` intentionally stays narrower than upstream, while `build.rs` compiles only the small `cstr`/`env`/`io`/`tile` support closure needed by the logger.
 ```bash
 cp -r ~/dev/firedancer/src/ballet/{ed25519,fiat-crypto,hex,sha512,fd_ballet.h,fd_ballet_base.h} vendor/ballet
 cp -r ~/dev/firedancer/src/util vendor

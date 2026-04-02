@@ -140,38 +140,8 @@
    * Communications between threads on the same host can be done either
      by message passing or via shared memory. */
 
-#include <stdint.h>
-#include <stdio.h>
-#include <time.h>
-#include <stdarg.h>
-
-/* Standalone fd_log - basic type definitions */
-typedef uint64_t ulong;
-typedef uint32_t uint;
-typedef uint8_t uchar;
-
-/* Basic macros for standalone operation */
-#ifndef FD_FN_CONST
-#define FD_FN_CONST
-#endif
-#ifndef FD_FN_PURE  
-#define FD_FN_PURE
-#endif
-#ifndef FD_PROTOTYPES_BEGIN
-#define FD_PROTOTYPES_BEGIN
-#endif
-#ifndef FD_PROTOTYPES_END
-#define FD_PROTOTYPES_END
-#endif
-#ifndef FD_LIKELY
-#define FD_LIKELY(x) (x)
-#endif
-#ifndef FD_UNLIKELY
-#define FD_UNLIKELY(x) (x)
-#endif
-
-/* Clock function type */
-typedef long (*fd_clock_func_t)( void const * args );
+#include "../env/fd_env.h"
+#include "../io/fd_io.h"
 
 /* FD_LOG_NOTICE(( ... printf style arguments ... )) will send a message
    at the NOTICE level to the logger.  E.g. for a typical fd_log
@@ -296,6 +266,38 @@ typedef long (*fd_clock_func_t)( void const * args );
 
 #define FD_TEST_CUSTOM(c,err) do { if( FD_UNLIKELY( !(c) ) ) FD_LOG_ERR(( "FAIL: %s", (err) )); } while(0)
 
+/* FD_PARANOID / FD_CRIT / FD_ALERT:
+
+   FD_PARANOID configures the FD_CRIT / FD_ALERT runtime checks.
+
+   If FD_PARANOID is set: FD_CRIT / FD_ALERT will FD_LOG_CRIT /
+   FD_LOG_ALERT the application if c evaluates to false with a
+   descriptive error that includes the user message m (m should evaluate
+   to a cstr when c is false).
+
+   If not set: FD_CRIT will evaluate c (such that any side effects of c
+   will still happen), the false code path will be marked as unreachable
+   (such that the optimizer will treat the code following the FD_CRIT
+   the same as when paranoid was set) and m will not be evaluated.
+   FD_ALERT will not evaluate c or m.
+
+   In short, use FD_ALERT when c is expensive to evalute but has no side
+   effects.  Use FD_CRIT for all other cases.
+
+   FIXME: probably should rename FD_TEST_CUSTOM to FD_ERR. */
+
+#ifndef FD_PARANOID
+#define FD_PARANOID 1
+#endif
+
+#if FD_PARANOID
+#define FD_CRIT( c,m) do { if( FD_UNLIKELY( !(c) ) ) FD_LOG_CRIT (( "FAIL: %s (%s)", #c, (m) )); } while(0)
+#define FD_ALERT(c,m) do { if( FD_UNLIKELY( !(c) ) ) FD_LOG_ALERT(( "FAIL: %s (%s)", #c, (m) )); } while(0)
+#else
+#define FD_CRIT( c,m) do { if( FD_UNLIKELY( !(c) ) ) __builtin_unreachable(); } while(0)
+#define FD_ALERT(c,m) do {                                                    } while(0)
+#endif
+
 /* Macros for doing hexedit / tcpdump-like logging of memory regions.
    E.g.
 
@@ -339,9 +341,7 @@ typedef long (*fd_clock_func_t)( void const * args );
   (uint)(((uchar const *)(b))[16]), (uint)(((uchar const *)(b))[17]), \
   (uint)(((uchar const *)(b))[18]), (uint)(((uchar const *)(b))[19])
 
-#ifndef FD_LOG_NAME_MAX
 #define FD_LOG_NAME_MAX (40UL)
-#endif
 
 FD_PROTOTYPES_BEGIN
 
@@ -630,6 +630,7 @@ void fd_log_level_stderr_set ( int level );
 void fd_log_level_flush_set  ( int level );
 void fd_log_level_core_set   ( int level );
 
+void fd_log_enable_signal_handler( void );
 void fd_log_enable_unclean_exit( void );
 
 /* These functions are for fd_log internal use only. */

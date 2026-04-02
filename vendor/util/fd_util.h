@@ -3,18 +3,17 @@
 
 //#include "fd_util_base.h"          /* includes stdalign.h string.h limits.h float.h */
 //#include "sanitize/fd_sanitize.h"  /* includes fd_util_base.h (fd_asan.h fd_msan.h) */
-//#include "valloc/fd_valloc.h"      /* includes fd_util_base.h */ /* FIXME: deprecate? */
 //#include "bits/fd_bits.h"          /* includes sanitize/fd_sanitize.h (fd_bits_find_lsb.h fd_bits_find_msb.h fd_bits_tg.h) */
 //#include "io/fd_io.h"              /* includes bits/fd_bits.h */
 //#include "cstr/fd_cstr.h"          /* includes bits/fd_bits.h */
 #include "rng/fd_rng.h"              /* includes bits/fd_bits.h */
-#include "spad/fd_spad.h"            /* includes bits/fd_bits.h valloc/fd_valloc.h */
+#include "spad/fd_spad.h"            /* includes bits/fd_bits.h */
 //#include "env/fd_env.h"            /* includes cstr/fd_cstr.h */
 //#include "log/fd_log.h"            /* includes env/fd_env.h io/fd_io.h */
 //#include "checkpt/fd_checkpt.h"    /* includes log/fd_log.h */
 //#include "shmem/fd_shmem.h"        /* includes log/fd_log.h */
 //#include "tile/fd_tile.h"          /* includes shmem/fd_shmem.h */
-//#include "scratch/fd_scratch.h"    /* includes tile/fd_tile.h valloc/fd_valloc.h */ /* FIXME: deprecate non alloca parts? */
+//#include "scratch/fd_scratch.h"    /* includes tile/fd_tile.h */ /* FIXME: deprecate non alloca parts? */
 //#include "tpool/fd_tpool.h"        /* includes scratch/fd_scratch.h */
 //#include "wksp/fd_wksp.h"          /* includes tpool/fd_tpool.h checkpt/fd_checkpt.h */
 #include "alloc/fd_alloc.h"          /* includes wksp/fd_wksp.h */
@@ -208,7 +207,7 @@ FD_PROTOTYPES_BEGIN
 
        A non-zero colorize indicates stderr log messages should be
        colorized.  default is disabled unless either
-       COLORTERM==truecolor or TERM==xterm-256color in the environment.
+       COLORTERM==truecolor or TERM==*256color* in the environment.
        (This can also be enabled / disabled on the fly by the program
        itself.) Note that the permanent log is _never_ colorized to aid
        in robust log file message archiving.
@@ -296,6 +295,28 @@ fd_boot( int *    pargc,
 
 void
 fd_halt( void );
+
+#if FD_HAS_HOSTED
+
+/* Depending on the glibc version, the "poll" library function either calls
+   "poll" or "ppoll".  fd_syscall_poll standardizes this behaviour by always
+   calling "ppoll" under the hood on Linux systems (and falls back on "poll"
+   otherwise).  Since the Firedancer sandbox needs to whitelist syscalls and
+   "poll" is not available on arm64 architecture, using this function also
+   lets us use the same seccomp policy for allowing syscalls.
+
+   The arguments to fd_syscall_poll match the arguments to "poll".  The return
+   value matches the return of "poll" (and "ppoll").  On error (return -1),
+   "errno" is set to indicate the error. */
+
+struct pollfd;
+
+int
+fd_syscall_poll( struct pollfd * fds,
+                 uint            nfds,
+                 int             timeout );
+
+#endif
 
 FD_PROTOTYPES_END
 
