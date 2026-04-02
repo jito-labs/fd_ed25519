@@ -31,8 +31,8 @@ Files taken from:
 https://github.com/firedancer-io/firedancer/tree/b623123e82238b8bbee407648271cff36342c6df
 
 Directories:
-- `ballet`: Copied `ed25519`, `fiat-crypto`, `hex`, and `sha512` from FD. `fd_ballet.h` remains a narrow local shim that omits non-vendored `shred`, `bmtree`, and `blake3` includes.
-- `util`: `fd_util_base.h`, `fd_util.h`, `fd_util.c`, `fd_log.h`, and `fd_log.c` now track `v0.8` tip. `vendor/util/log/Local.mk` intentionally stays narrower than upstream, while `build.rs` compiles only the small `cstr`/`env`/`io`/`tile` support closure needed by the logger.
+- `ballet`: Vendored files track FD `v0.8` tip. `fd_ballet.h` remains a narrow local shim that omits non-vendored `shred`, `bmtree`, and `blake3` includes.
+- `util`: Vendored files track FD `v0.8` tip. The remaining intentional local differences are `vendor/util/log/Local.mk`, which keeps the logger build narrower than upstream, and `vendor/util/log/fd_log.c`, which carries a small `FD_HAS_BACKTRACE=0` compatibility guard. `build.rs` compiles only the subset needed by this crate.
 ```bash
 cp -r ~/dev/firedancer/src/ballet/{ed25519,fiat-crypto,hex,sha512,fd_ballet.h,fd_ballet_base.h} vendor/ballet
 cp -r ~/dev/firedancer/src/util vendor

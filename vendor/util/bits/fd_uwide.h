@@ -88,6 +88,12 @@ static inline void
 fd_uwide_mul( ulong * FD_RESTRICT _zh, ulong * FD_RESTRICT _zl,
               ulong               x,
               ulong               y ) {
+#if FD_HAS_INT128
+    /* Compiles to one mulx instruction */
+    uint128 res = (uint128)x * (uint128)y;
+    *_zh = (ulong)(res>>64);
+    *_zl = (ulong) res;
+#else
   ulong x1  = x>>32;  ulong x0  = (ulong)(uint)x;   /* both 2^32-1 @ worst case (x==y==2^64-1) */
   ulong y1  = y>>32;  ulong y0  = (ulong)(uint)y;   /* both 2^32-1 @ worst case */
 
@@ -103,6 +109,7 @@ fd_uwide_mul( ulong * FD_RESTRICT _zh, ulong * FD_RESTRICT _zl,
   /* zh 2^64 + zl == 2^128-2^65+1 @ worst case */
 
   *_zh = zh; *_zl = zl;
+#endif
 }
 
 /* fd_uwide_find_msb returns floor( log2 <xh,xl> ) exactly.  Assumes
@@ -126,11 +133,11 @@ static inline int fd_uwide_find_msb_def( ulong xh, ulong xl, int def ) { return 
    Large values of s are fine (shifts to zero).  Returns the inexact
    flag (will be 0 or 1) which indicates if any non-zero bits of <xh,xl>
    were lost in the process.  Note that inexact handling and various
-   cases should be compile time optimized out if if s is known at
-   compile time on input and/or return value is not used.  Ignoring
-   inexact handling and assuming compile time s, for the worst case s,
-   cost is 3 u64 shifts and 1 u64 bit or.  FIXME: CONSIDER HAVING AN
-   INVALID FLAG FOR NEGATIVE S?  FIXME: BRANCHLESS? */
+   cases should be compile time optimized out if s is known at compile
+   time on input and/or return value is not used.  Ignoring inexact
+   handling and assuming compile time s, for the worst case s, cost is 3
+   u64 shifts and 1 u64 bit or.  FIXME: CONSIDER HAVING AN INVALID FLAG
+   FOR NEGATIVE S?  FIXME: BRANCHLESS? */
 
 static inline int
 fd_uwide_sl( ulong * FD_RESTRICT _zh, ulong * FD_RESTRICT _zl,
@@ -148,12 +155,12 @@ fd_uwide_sl( ulong * FD_RESTRICT _zh, ulong * FD_RESTRICT _zl,
    Large values of s are fine (shifts to zero).  Returns the inexact
    flag (will be 0 or 1) which indicates if any non-zero bits of <xh,xl>
    were lost in the process.  Note that inexact handling and various
-   cases should be compile time optimized out if if s is known at
-   compile time on input and/or return value is not used.  Ignoring
-   inexact handling and assuming compile time s, for the worst case s,
-   cost is 3 u64 shifts and 1 u64 bit or.  (FIXME: CONSIDER HAVING AN
-   INVALID FLAG FOR NEGATIVE S AND/OR MORE DETAILED INEXACT FLAGS TO
-   SIMPLIFY IMPLEMENTING FIXED AND FLOATING POINT ROUNDING MODES?) */
+   cases should be compile time optimized out if s is known at compile
+   time on input and/or return value is not used.  Ignoring inexact
+   handling and assuming compile time s, for the worst case s, cost is 3
+   u64 shifts and 1 u64 bit or.  (FIXME: CONSIDER HAVING AN INVALID FLAG
+   FOR NEGATIVE S AND/OR MORE DETAILED INEXACT FLAGS TO SIMPLIFY
+   IMPLEMENTING FIXED AND FLOATING POINT ROUNDING MODES?) */
 
 static inline int
 fd_uwide_sr( ulong * FD_RESTRICT _zh, ulong * FD_RESTRICT _zl,

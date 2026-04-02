@@ -1,5 +1,5 @@
-#ifndef HEADER_fd_src_cstr_fd_cstr_h
-#define HEADER_fd_src_cstr_fd_cstr_h
+#ifndef HEADER_fd_src_util_cstr_fd_cstr_h
+#define HEADER_fd_src_util_cstr_fd_cstr_h
 
 /* APIs for manipulating '\0'-terminated character strings ("cstr") */
 
@@ -113,6 +113,23 @@ fd_cstr_casecmp( char const * a,
 
 FD_FN_PURE ulong
 fd_cstr_nlen( char const * s,
+              ulong        m );
+
+/* fd_cstr_ncpy is a safe version of strncpy.  d is the destination cstr
+   and s is the source cstr.  d and s should not overlap.  Assumes d has
+   space for up to m bytes.  Always returns d.  All bytes of d will be
+   initialized.  Further, if m is not zero, d will _always_ be properly
+   '\0' terminated.
+
+   Specifically, if m is 0 (i.e. d has zero bytes of storage), this
+   returns d.  Otherwise, if s is NULL, this will zero out all m bytes
+   of d and return d.  Otherwise, this will copy up to m-1 of the
+   leading non-zero bytes in s into d.  All remaining bytes of d (there
+   will be at least 1) will be initialized to zero. */
+
+char *
+fd_cstr_ncpy( char *       d,
+              char const * s,
               ulong        m );
 
 /* cstr output ********************************************************/
@@ -481,4 +498,4 @@ FD_PROTOTYPES_END
 #define fd_isascii(c)  (!!isascii((c)))
 #define fd_isblank(c)  (!!isblank((c)))
 
-#endif /* HEADER_fd_src_cstr_fd_cstr_h */
+#endif /* HEADER_fd_src_util_cstr_fd_cstr_h */

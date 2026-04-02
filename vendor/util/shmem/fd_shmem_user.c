@@ -86,8 +86,9 @@ fd_shmem_private_map_query_by_addr( fd_shmem_join_info_t * map,
  */
 static void *
 fd_shmem_private_grab_region( ulong addr,
-                              ulong size ) {
-  void * mmap_ret = mmap( (void*)addr, size, PROT_READ, MAP_ANON|MAP_PRIVATE, -1, 0 );
+                              ulong size,
+                              int   prot ) {
+  void * mmap_ret = mmap( (void*)addr, size, prot, MAP_ANON|MAP_PRIVATE, -1, 0 );
   if( FD_UNLIKELY( mmap_ret == MAP_FAILED ) ) return mmap_ret;
 
   if( FD_UNLIKELY( (ulong)mmap_ret != addr ) ) {
@@ -102,7 +103,8 @@ fd_shmem_private_grab_region( ulong addr,
 
 void *
 fd_shmem_private_map_rand( ulong size,
-                           ulong align ) {
+                           ulong align,
+                           int   prot ) {
   ulong ret_addr = 0;
 
   /* Failure is unlikely, 1000 iterations should guarantee success */
@@ -114,7 +116,7 @@ fd_shmem_private_map_rand( ulong size,
     ret_addr &= 0x00007FFFFFFFFFFFUL;
     ret_addr  = fd_ulong_align_up( ret_addr, align );
 
-    if( fd_shmem_private_grab_region( ret_addr, size )!=MAP_FAILED ) {
+    if( fd_shmem_private_grab_region( ret_addr, size, prot )!=MAP_FAILED ) {
       return (void *)ret_addr;
     }
   }
@@ -130,8 +132,7 @@ fd_shmem_join( char const *               name,
                int                        mode,
                fd_shmem_joinleave_func_t  join_func,
                void *                     context,
-               fd_shmem_join_info_t *     opt_info,
-               int                        lock_pages ) {
+               fd_shmem_join_info_t *     opt_info ) {
 
   /* Check input args */
 
@@ -196,7 +197,7 @@ fd_shmem_join( char const *               name,
   }
 
   /* Generate a random address that we are guaranteed to be able to map */
-  void * const map_addr = fd_shmem_private_map_rand( sz, page_sz );
+  void * const map_addr = fd_shmem_private_map_rand( sz, page_sz, PROT_READ );
   if( FD_UNLIKELY( map_addr==MAP_FAILED ) ) FD_LOG_ERR(( "fd_shmem_private_map_rand failed" ));
 
   /* Note that MAP_HUGETLB and MAP_HUGE_* are implied by the mount point */
@@ -229,21 +230,17 @@ fd_shmem_join( char const *               name,
     return NULL;
   }
 
+  /* Lock this region in DRAM to prevent it going to swap and (try) to
+     keep the virtual to physical DRAM mapping fixed for the join
+     duration.  Also advise the kernel to not dump this region to avoid
+     large shared mappings in concurrent use by multiple processes
+     destroying the system with core files if a bunch of thread using
+     this mapping seg fault concurrently. */
 
-  if( FD_LIKELY( lock_pages ) ) {
-    /* Lock this region in DRAM to prevent it going to swap and (try) to
-       keep the virtual to physical DRAM mapping fixed for the join
-       duration. */
+  if( FD_UNLIKELY( fd_numa_mlock( shmem, sz ) ) )
+    FD_LOG_WARNING(( "fd_numa_mlock(\"%s\",%lu KiB) failed (%i-%s); attempting to continue",
+                    path, sz>>10, errno, fd_io_strerror( errno ) ));
 
-    if( FD_UNLIKELY( fd_numa_mlock( shmem, sz ) ) )
-      FD_LOG_WARNING(( "fd_numa_mlock(\"%s\",%lu KiB) failed (%i-%s); attempting to continue",
-                      path, sz>>10, errno, fd_io_strerror( errno ) ));
-  }
-
-  /* Advise the kernel to not dump this region to avoid
-      large shared mappings in concurrent use by multiple processes
-      destroying the system with core files if a bunch of thread using
-      this mapping seg fault concurrently. */
   if( FD_UNLIKELY( madvise( shmem, sz, MADV_DONTDUMP ) ) )
     FD_LOG_WARNING(( "madvise(\"%s\",%lu KiB) failed (%i-%s); attempting to continue",
                      path, sz>>10, errno, fd_io_strerror( errno ) ));

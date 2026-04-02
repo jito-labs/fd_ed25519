@@ -270,6 +270,8 @@
 
 */
 
+#include "fd_map.h"
+
 /* MAP_NAME gives the API prefix to use for map */
 
 #ifndef MAP_NAME
@@ -308,6 +310,14 @@
 
 #ifndef MAP_NEXT
 #define MAP_NEXT next
+#endif
+
+/* If we're using the optimized random access removal, then we also need
+   a MAP_ELE_T prev field. */
+#if MAP_OPTIMIZE_RANDOM_ACCESS_REMOVAL
+#  ifndef MAP_PREV
+#    define MAP_PREV prev
+#  endif
 #endif
 
 /* MAP_KEY_EQ returns 0/1 if *k0 is the same/different as *k1 */
@@ -392,12 +402,7 @@ typedef struct MAP_(private) MAP_(private_t);
 
 typedef MAP_(private_t) MAP_(t);
 
-struct MAP_(iter) {
-  ulong chain_rem;
-  ulong ele_idx;
-};
-
-typedef struct MAP_(iter) MAP_(iter_t);
+typedef struct fd_map_chain_iter MAP_(iter_t);
 
 FD_PROTOTYPES_BEGIN
 
@@ -609,6 +614,8 @@ MAP_(t) *         MAP_(join)     ( void * shmap );
 void *            MAP_(leave)    ( MAP_(t) * join );
 void *            MAP_(delete)   ( void * shmap );
 
+void              MAP_(reset)    ( MAP_(t) * join );
+
 MAP_(t) *
 MAP_(idx_insert)( MAP_(t) *   join,
                   ulong       ele_idx,
@@ -619,6 +626,18 @@ MAP_(idx_remove)( MAP_(t) *         join,
                   MAP_KEY_T const * key,
                   ulong             sentinel,
                   MAP_ELE_T *       pool );
+
+#if MAP_OPTIMIZE_RANDOM_ACCESS_REMOVAL
+void
+MAP_(idx_remove_fast)( MAP_(t) *   join,
+                       ulong       ele_idx,
+                       MAP_ELE_T * pool );
+
+MAP_ELE_T *
+MAP_(ele_remove_fast)( MAP_(t) *   join,
+                       MAP_ELE_T * ele,
+                       MAP_ELE_T * pool  );
+#endif
 
 FD_FN_PURE ulong
 MAP_(idx_query)( MAP_(t) *         join,
@@ -765,6 +784,14 @@ MAP_(delete)( void * shmap ) {
   return shmap;
 }
 
+MAP_IMPL_STATIC void
+MAP_(reset)( MAP_(t) * join ) {
+  MAP_(private_t) * map = MAP_(private)( join );
+
+  MAP_IDX_T * chain = MAP_(private_chain)( map );
+  for( ulong chain_idx=0UL; chain_idx<map->chain_cnt; chain_idx++ ) chain[ chain_idx ] = MAP_(private_box)( MAP_(private_idx_null)() );
+}
+
 FD_FN_PURE MAP_IMPL_STATIC ulong
 MAP_(idx_query)( MAP_(t) *         join,
                  MAP_KEY_T const * key,
@@ -868,6 +895,14 @@ MAP_(idx_remove_fast)( MAP_(t) *   join,
 
   if( FD_UNLIKELY( !MAP_(private_idx_is_null)( ele->MAP_PREV ) ) )          pool[ ele->MAP_PREV ].MAP_NEXT = ele->MAP_NEXT;
   else { MAP_(private_chain)( map )[ MAP_(private_chain_idx)( &ele->MAP_KEY, map->seed, map->chain_cnt ) ] = ele->MAP_NEXT; }
+}
+
+MAP_IMPL_STATIC MAP_ELE_T *
+MAP_(ele_remove_fast)( MAP_(t) *   join,
+                       MAP_ELE_T * ele,
+                       MAP_ELE_T * pool  ) {
+  MAP_(idx_remove_fast)( join, (ulong)(ele-pool), pool );
+  return ele;
 }
 #endif
 
@@ -1019,16 +1054,6 @@ MAP_(ele_remove)( MAP_(t) *         join,
   return fd_ptr_if( !MAP_(private_idx_is_null)( ele_idx ), (MAP_ELE_T       *)( (ulong)pool + (ele_idx * sizeof(MAP_ELE_T)) ), sentinel );
 }
 
-#if MAP_OPTIMIZE_RANDOM_ACCESS_REMOVAL
-static inline MAP_ELE_T *
-MAP_(ele_remove_fast)( MAP_(t) *   join,
-                       MAP_ELE_T * ele,
-                       MAP_ELE_T * pool  ) {
-  MAP_(idx_remove_fast)( join, (ulong)(ele-pool), pool );
-  return ele;
-}
-#endif
-
 FD_FN_PURE static inline MAP_ELE_T *
 MAP_(ele_query)( MAP_(t) *         join,
                  MAP_KEY_T const * key,
@@ -1078,3 +1103,4 @@ FD_PROTOTYPES_END
 #undef MAP_NAME
 #undef MAP_MULTI
 #undef MAP_OPTIMIZE_RANDOM_ACCESS_REMOVAL
+#undef MAP_INSERT_FENCE
